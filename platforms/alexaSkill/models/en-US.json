@@ -1,0 +1,71 @@
+{
+  "languageModel": {
+    "intents": [
+      {
+        "name": "AMAZON.CancelIntent",
+        "samples": [
+          "cancel",
+          "abort"
+        ]
+      },
+      {
+        "name": "AMAZON.HelpIntent",
+        "samples": [
+          "help"
+        ]
+      },
+      {
+        "name": "AMAZON.StopIntent",
+        "samples": [
+          "stop"
+        ]
+      },
+      {
+        "name": "AMAZON.YesIntent",
+        "samples": []
+      },
+      {
+        "name": "AreaIntent",
+        "samples": [
+          "area",
+          "size"
+        ],
+        "slots": []
+      },
+      {
+        "name": "EconomyIntent",
+        "samples": [
+          "economy"
+        ],
+        "slots": []
+      },
+      {
+        "name": "PopulationIntent",
+        "samples": [
+          "population",
+          "inhabitants",
+          "number of people"
+        ],
+        "slots": []
+      },
+      {
+        "name": "RainfallIntent",
+        "samples": [
+          "rainfall",
+          "rain",
+          "precipitation"
+        ],
+        "slots": []
+      },
+      {
+        "name": "WealthIntent",
+        "samples": [
+          "wealth",
+          "income"
+        ],
+        "slots": []
+      }
+    ],
+    "invocationName": "world duel"
+  }
+}
