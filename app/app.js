@@ -6,9 +6,9 @@
 
 //const {App} = require('jovo-framework');
 const app = new (require('jovo-framework').JovoClazz)();
-//let app = require( 'jovo-framework').Jovo;
-//let app = require( 'jovo-framework');
-const translations = require( "./i18n/en-US.js");
+
+let translations = require( "./i18n/en-US.js");
+Object.assign( translations, require( './i18n/de-DE.js'));
 
 const config = {
     logging: true,
@@ -27,7 +27,7 @@ const config = {
 
 //const app = new App(config);
 app.setConfig( config);
-
+app.setDynamoDb( 'WORLDDUEL_USERS');
 
 // =================================================================================
 // App Logic
@@ -36,25 +36,28 @@ app.setConfig( config);
 const events = require('./events/events.js');
 
 app.setHandler({
-    'LAUNCH': function() {
-        events.launch( app);
+     'NEW_USER': function() {
+        events.session.new_user( this);
     },
-     'Unhandled': function() {
-        events.launch( app);
+    'NEW_SESSION': function() {
+        events.session.known_user( this);
     },
     'END': function() {
-        events.exit.menu( app);
+        events.exit.menu( this);
     },
 
     'STATE_MENU' : {
         'YesIntent'  : function() {
-            events.tag_select( app);
+            events.session.start_game( this);
         },
         'Unhandled' : function() {
-            events.help.tag( app);
+            events.session.start_game( this);
+        },
+        'NoIntent' : function() {
+            events.exit.menu( this);
         },
         'END' : function() {
-            events.exit.menu( app);
+            events.exit.menu( this);
         }
     },
 

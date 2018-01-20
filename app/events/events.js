@@ -1,22 +1,57 @@
 
 const SPREADSHEET_ID  = process.env.SPREADSHEET_ID;
-//const SHEET_ID  = process.env.SHEET_ID;
-const SHEET_ID  = "quotes";
 
 const NUMBER_TURNS_PER_ROUND = 4;
 
 const http = require('http');
 
 module.exports = {
-    launch : function( app){
-        app.followUpState( 'STATE_MENU');
-        app.speech.t('WELCOME_NEW');
+    session : {
 
-        app.setSessionAttribute( 'count_games', 0);
-        app.setSessionAttribute( 'count_wins', 0);
-        app.setSessionAttribute( 'count_defeats', 0);
+        new_user : function( app){
+            app.speech.t( 'WELCOME_NEW', NUMBER_TURNS_PER_ROUND);
 
-        module.exports.spreadsheet.get_cards( app);
+            app.setSessionAttribute( 'count_total_rounds', 0);
+            app.setSessionAttribute( 'count_total_turns', 0);
+            app.setSessionAttribute( 'count_total_wins', 0);
+            app.setSessionAttribute( 'count_total_defeats', 0);
+
+            app.setSessionAttribute( 'count_round_current_wins', 0);
+            app.setSessionAttribute( 'count_round_previous_wins', 0);
+
+            app.user().data.count_total_rounds = 0;
+            app.user().data.count_total_turns = 0;
+            app.user().data.count_total_wins = 0;
+            app.user().data.count_total_defeats = 0;
+            app.user().data.count_round_previous_wins = 0;
+
+            module.exports.spreadsheet.get_cards( app);
+        },
+
+        known_user : function( app){
+            app.speech.t( 'WELCOME_KNOWN');
+
+            app.setSessionAttribute( 'count_total_rounds', app.user().data.count_total_rounds);
+            app.setSessionAttribute( 'count_total_turns', app.user().data.count_total_turns);
+            app.setSessionAttribute( 'count_total_wins', app.user().data.count_total_wins);
+            app.setSessionAttribute( 'count_total_defeats', app.user().data.count_total_defeats);
+
+            app.setSessionAttribute( 'count_round_current_wins', 0);
+            app.setSessionAttribute( 'count_round_previous_wins', app.user().data.count_round_previous_wins);
+
+            app.setSessionAttribute( 'country_current', app.user().data.country_current);            
+
+            module.exports.spreadsheet.get_cards( app);
+        },
+
+        start_game : function( app){
+
+            if ( app.getSessionAttribute( 'count_total_turns') == 0){
+                module.exports.stack.initialize( app);
+            } else {
+                module.exports.stack.build( app);
+            }
+        }
     },
 
     spreadsheet : {
@@ -54,6 +89,7 @@ module.exports = {
                     try {
                         const parsedData = JSON.parse(rawData);
                         //console.log(parsedData);
+                        const de_regex = new RegExp("de-de: (.+?), population");
                         const population_regex = new RegExp("population: (.+?), area");
                         const area_regex = new RegExp("area: (.+?), economy");
                         const economy_regex = new RegExp("economy: (.+?), wealth");
@@ -61,9 +97,12 @@ module.exports = {
                         const rainfall_regex = new RegExp("rainfall: (.+?)$");
                         let country_index = {};
                         for (var i = 0; i < parsedData.feed.entry.length; i++){
+                            console.log( "Current row: " + parsedData.feed.entry[ i].content.$t);
                             const row_content = parsedData.feed.entry[ i].content.$t;
                             country_index[ parsedData.feed.entry[ i].title.$t] = ( 
                                 {
+                                    'en' : parsedData.feed.entry[ i].title.$t,
+                                    'de' : de_regex.exec( row_content)[ 1],
                                     'population' : parseInt(population_regex.exec( row_content)[ 1].replace( /\,/g, '')),
                                     'area' : parseInt(area_regex.exec( row_content)[ 1].replace( /\,/g, '')),
                                     'economy' : parseInt(economy_regex.exec( row_content)[ 1].replace( /\,/g, ''))
@@ -74,7 +113,11 @@ module.exports = {
                             );
                         }
                         app.setSessionAttribute( 'country_index', country_index);
-                        module.exports.stack.initialize( app);
+                        app.followUpState( 'STATE_MENU');
+                        app.ask(
+                            app.speech,
+                            app.t( 'WELCOME_REPROMPT')
+                        );
                     } catch ( err) {
                         console.error( err.message);
                         module.exports.exit.error( app);
@@ -97,10 +140,43 @@ module.exports = {
             app.setSessionAttribute( 'country_active_id', 0);
             app.setSessionAttribute( 'country_stack', country_stack);
 
+            app.user().data.country_current = country_stack[ 0];
+
             app.followUpState( 'STATE_ROUND_SELECT');
 
             app.ask(
-                app.speech.t( 'ROUND_START', country_stack[ 0])
+                app.speech
+                    .t( 'ROUND_START_NEW_USER', country_stack[ 0])
+                    .t( 'ROUND_PROMPT'),
+                app.t( 'ROUND_REPROMPT' )
+            );
+        },
+
+        build : function( app){
+            const country_index = app.getSessionAttribute( 'country_index');
+
+            const country_current = app.user().data.country_current;
+
+            let country_stack = shuffle_array( Object.keys( country_index));
+            if ( country_current){
+                country_stack.splice( country_stack.indexOf( country_current), 1)
+                country_stack.unshift( country_current);
+            }
+            country_stack = country_stack.splice( 0, NUMBER_TURNS_PER_ROUND + 1);
+
+            app.setSessionAttribute( 'country_active_id', 0);
+            app.setSessionAttribute( 'country_stack', country_stack);
+
+            app.user().data.country_current = country_stack[ 0];
+
+            app.followUpState( 'STATE_ROUND_SELECT');
+
+            app.ask(
+                app.speech
+                    .t( 'ROUND_START_NEW_SESSION_HELP')
+                    .t( 'ROUND_START_NEW_SESSION', country_stack[ 0])
+                    .t( 'ROUND_PROMPT'),
+                app.t( 'ROUND_REPROMPT' )
             );
         },
 
@@ -120,7 +196,11 @@ module.exports = {
             app.followUpState( 'STATE_ROUND_SELECT');
 
             app.ask(
-                app.speech.t( 'ROUND_RESTART', country_stack_new[ 0])
+                app.speech
+                    .t( 'ROUND_START_NEW_ROUND', country_stack_new[ 0])
+                    .t( 'ROUND_PROMPT'),
+                app.speechBuilder()
+                    .t( 'ROUND_REPROMPT', country_stack_new[ 0])
             );
         }
     },
@@ -189,36 +269,65 @@ module.exports = {
             console.log( "The " + stat_selected + " of " + country_next
                 + " is " + country_index[ country_next][ stat_selected])
 
-            app.setSessionAttribute( 
-                'count_games',
-                 app.getSessionAttribute( 'count_games') + 1
-            );
+            const count_total_turns = app.getSessionAttribute( 'count_total_turns') + 1;
+            app.setSessionAttribute( 'count_total_turns', count_total_turns );
+            app.user().data.count_total_turns = count_total_turns ;
+
+            let count_total_wins = app.getSessionAttribute( 'count_total_wins');
+            let count_total_defeats = app.getSessionAttribute( 'count_total_defeats');
+            let count_round_current_wins = app.getSessionAttribute( 'count_round_current_wins');
 
             if ( country_index[ country_current][ stat_selected]
                 > country_index[ country_next][ stat_selected]
             ){
-                app.setSessionAttribute( 
-                    'count_wins',
-                     app.getSessionAttribute( 'count_wins') + 1
-                );
-                app.speech.t( 
-                    'ROUND_WIN',
-                    country_current,
-                    stat_selected,
-                    country_next
-                );
+                count_total_wins += 1;
+                app.setSessionAttribute( 'count_total_wins', count_total_wins);
+                app.user().data.count_total_wins = count_total_wins;
+
+                count_round_current_wins += 1
+                app.setSessionAttribute( 'count_round_current_wins', count_round_current_wins);
+
+                app.speech
+                    .t( 'ROUND_WIN_JINGLE')
+                    .t( 'ROUND_WIN');
+
             } else {
-                app.setSessionAttribute( 
-                    'count_defeats',
-                     app.getSessionAttribute( 'count_defeats') + 1
-                );
-                app.speech.t( 
-                    'ROUND_LOSE',
-                    country_next,
-                    stat_selected,
-                    country_current
-                );
+
+                count_total_defeats += 1;
+                app.setSessionAttribute( 'count_total_defeats', count_total_defeats);
+                app.user().data.count_total_defeats = count_total_defeats;
+
+                app.speech
+                    .t( 'ROUND_LOSE_JINGLE')
+                    .t( 'ROUND_LOSE');
             }
+
+            app.setSessionAttribute( 
+                'total_ẃin_rate',
+                count_total_wins / count_total_turns
+            );
+            app.user().data.total_ẃin_rate = app.getSessionAttribute( 'total_ẃin_rate');
+            
+            app.setSessionAttribute( 
+                'total_score',
+                 Math.log2( 1 + count_total_wins)
+                 * (( count_total_wins + count_total_turns) / Math.max( count_total_turns, 1))
+            );
+            app.user().data.total_score = app.getSessionAttribute( 'total_score');
+
+            module.exports.round.continue( app);
+        },
+
+        continue : function( app){
+            const country_stack = app.getSessionAttribute( 'country_stack');
+            const country_active_id = app.getSessionAttribute( 'country_active_id');
+            const country_next = country_stack[ country_active_id + 1];
+
+            const count_round_previous_wins = app.getSessionAttribute( 'count_round_previous_wins');
+            const count_round_current_wins = app.getSessionAttribute( 'count_round_current_wins');
+            const count_total_rounds = app.getSessionAttribute( 'count_total_rounds');
+
+            app.user().data.country_current = country_next;
 
             if ( country_active_id + 1 < NUMBER_TURNS_PER_ROUND){
                 app.setSessionAttribute( 
@@ -229,15 +338,85 @@ module.exports = {
                 app.followUpState( 'STATE_ROUND_SELECT');
                 app.ask(
                     app.speech
-                        .t( 'ROUND_MIDDLE', country_next),
+                        .t( 'ROUND_MIDDLE', country_next)
+                        .t( 'ROUND_PROMPT'),
                     app.t( 'ROUND_REPROMPT', country_next)
                 );
+
             } else {
-                app.speech.t(
-                    'ROUND_END',
-                    app.getSessionAttribute( 'count_wins'),
-                    app.getSessionAttribute( 'count_games')
-                );
+                if ( count_total_rounds == 0 && count_round_current_wins == NUMBER_TURNS_PER_ROUND){
+                    app.speech
+                        .t(
+                            'ROUND_END_START_FULL',
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds == 0 && count_round_current_wins > 1){
+                    app.speech
+                        .t(
+                            'ROUND_END_START_MULTIPLE',
+                            app.getSessionAttribute( 'count_total_wins'),
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else  if ( count_total_rounds == 0 && count_round_current_wins == 1){
+                    app.speech
+                        .t(
+                            'ROUND_END_START_SINGLE',
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds == 0 && count_round_current_wins == 0){
+                    app.speech
+                        .t(
+                            'ROUND_END_START_ZERO',
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds > 0 && count_round_current_wins == NUMBER_TURNS_PER_ROUND){
+                    app.speech
+                        .t(
+                            'ROUND_END_FULL',
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds > 0 && count_round_current_wins == 0){
+                    app.speech
+                        .t(
+                            'ROUND_END_ZERO',
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds > 0 && count_round_current_wins == 1){
+                    app.speech
+                        .t(
+                            'ROUND_END_SINGLE',
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds > 0 && count_round_current_wins > count_round_previous_wins){
+                    app.speech
+                        .t(
+                            'ROUND_END_POSITIVE',
+                            count_round_current_wins,
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else if ( count_total_rounds > 0 && count_round_current_wins < count_round_previous_wins){
+                    app.speech
+                        .t(
+                            'ROUND_END_NEGATIVE',
+                            count_round_current_wins,
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                } else {
+                    app.speech
+                        .t(
+                            'ROUND_END_NEUTRAL',
+                            count_round_current_wins,
+                            NUMBER_TURNS_PER_ROUND
+                        );                    
+                }
+
+                app.setSessionAttribute( 'count_total_rounds', count_total_rounds + 1);
+                app.setSessionAttribute( 'count_round_previous_wins', count_round_current_wins);
+                app.setSessionAttribute( 'count_round_current_wins', 0);
+
+                app.user().data.count_total_rounds = count_total_rounds + 1;
+                app.user().data.count_round_previous_wins = count_round_current_wins;
+
                 module.exports.stack.rebuild( app);
             } 
         }
@@ -246,15 +425,15 @@ module.exports = {
     help : {
 
         round : function( app){
-            const country_current = app.getSessionAttribute( 'country_current');
+            const country_active_id = app.getSessionAttribute( 'country_active_id');
+            const country_stack = app.getSessionAttribute( 'country_stack');
 
             app.ask( 
-                app.speechBuilder()
-                    .t( 'ROUND_HELP', country_current),
-                app.speechBuilder()
-                    .t( 'ROUND_REPROMPT', country_current)
+                app.speech.t( 'HELP_ROUND', country_stack[ country_active_id]),
+                app.speechBuilder().t( 'ROUND_REPROMPT', country_stack[ country_active_id])
             );
-        },
+        }
+
     },
 
     exit : {
