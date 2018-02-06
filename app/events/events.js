@@ -12,9 +12,8 @@ Connect to mongo:
   user_count.then(function(uc) {
     // DO SOMETHING WITH THE uc VALUE
   });
-
 */
-const db = monk('world_duel:wdfh03@colortapapp.com:27017/world_duel');
+const db = monk('USERNAME:PASSWORD@colortapapp.com:27017/world_duel');
 
 const NUMBER_TURNS_PER_ROUND = 4;
 
